@@ -23,40 +23,46 @@ class Intersection:
 
 
 @numba.njit
-def triangle_intersect(ray_origin, ray_direction, triangle):
-    v0 = triangle.vertex_1
-    v1 = triangle.vertex_2
-    v2 = triangle.vertex_3
+def triangle_intersect(ray, triangle, EPSILON=1e-6):
+    vertex_a = triangle.vertex_1
+    vertex_b = triangle.vertex_2
+    vertex_c = triangle.vertex_3
 
-    edge1 = v1 - v0
-    edge2 = v2 - v0
-    h = np.cross(ray_direction, edge2)
-    a = np.dot(edge1, h)
+    plane_normal = triangle.normal
 
-    if a > -1e-6 and a < 1e-6:
-        return None
+    ab = vertex_b - vertex_a
+    ac = vertex_c - vertex_a
 
-    f = 1.0 / a
-    s = ray_origin - v0
-    u = f * np.dot(s, h)
+    pvec = np.cross(ray.direction, ac)
+    det = np.dot(ab, pvec)
 
-    if u < 0.0 or u > 1.0:
-        return None
+    if abs(det) <= EPSILON:
+        return False
 
-    q = np.cross(s, edge1)
-    v = f * np.dot(ray_direction, q)
+    inv_det = 1.0 / det
 
-    if v < 0.0 or u + v > 1.0:
-        return None
+    tvec = ray.origin - vertex_a
 
-    t = f * np.dot(edge2, q)
+    u = np.dot(tvec, pvec) * inv_det
 
-    if t > 1e-6:
-        return t
+    if u < 0 or u > 1:
+        return False
 
-    return None
+    qvec = np.cross(tvec, ab)
 
+    v = np.dot(ray.direction, qvec) * inv_det
 
+    if v < 0 or u + v > 1:
+        return False
+
+    t = np.dot(ac, qvec) * inv_det
+
+    if t < ray.tmin or t > ray.tmax:
+        return False
+
+    ray.tmax = t
+
+    return True
 
 @numba.njit
 def __triangle_intersect(ray_origin, ray_end, triangle):

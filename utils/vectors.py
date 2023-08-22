@@ -5,9 +5,16 @@ import numba
 @numba.njit
 def normalize(vector):
     norm = np.linalg.norm(vector)
-    if norm==0:
+    if norm == 0:
         return vector
-    return vector/norm
+    return vector / norm
+
+
+# @numba.njit
+# def normalize(vector):
+#     norm = np.sqrt(np.sum(vector ** 2))
+#     normalized_vector = vector / norm
+#     return normalized_vector
 
 
 @numba.njit
@@ -46,8 +53,8 @@ def get_direction(p1, p2):
     :param p2: second point
     :return: direction vector
     """
-    direction = (p1-p2)/np.linalg.norm(p1-p2)
-    return  direction
+    direction = (p1 - p2) / np.linalg.norm(p1 - p2)
+    return direction
 
 
 def rotate(origin, point, angle):

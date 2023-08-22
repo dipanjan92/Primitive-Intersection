@@ -1,2 +1,2 @@
 # Primitive-Intersection
- 3D Collision Detection Algorithms
+Implementation of 3D Collision Detection Algorithms
