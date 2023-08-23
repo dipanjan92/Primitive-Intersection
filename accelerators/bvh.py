@@ -1,3 +1,5 @@
+import random
+
 import numba
 import numpy as np
 
@@ -5,7 +7,7 @@ from utils.constants import EPSILON
 from primitives.intersects import aabb_intersect, triangle_intersect, intersect_bounds
 from primitives.triangle import Triangle
 from primitives.aabb import AABB
-from utils.stl4py import nth_element, partition
+from utils.stdlib import nth_element, partition
 
 
 class BoundedBox:
@@ -141,13 +143,18 @@ def offset_bounds(bounds, point):
 
 def partition_pred(x, n_buckets, centroid_bounds, dim, min_cost_split_bucket):
     b = n_buckets * offset_bounds(centroid_bounds, x.bounds.centroid)[dim]
+
     if b == n_buckets:
         b = n_buckets - 1
+
+    assert b >= 0, "b is less than 0"
+    assert b < n_buckets, "b is not less than n_buckets"
+
     return b <= min_cost_split_bucket
 
 
-def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes):
-    split_method = 2  # 0: surface area heuristics, 1: mid point, 2: alternative median
+def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes, split_method=0):
+    # split_method = 2  # 0: surface area heuristics, 1: middle point, 2: equal parts
     n_boxes = len(bounded_boxes)
     max_prims_in_node = int(0.1 * n_boxes)
     max_prims_in_node = max_prims_in_node if max_prims_in_node < 10 else 10
@@ -171,13 +178,13 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes)
             ordered_prims.append(primitives[prim_num])
         node.init_leaf(first_prim_offset, n_primitives, bounds)
         return node, bounded_boxes, ordered_prims, total_nodes
-    elif n_primitives == 0:
-        #TODO: Check: start == end
-        first_prim_offset = len(ordered_prims)
-        prim_num = bounded_boxes[start].prim_num
-        ordered_prims.append(primitives[prim_num])
-        node.init_leaf(first_prim_offset, n_primitives, bounds)
-        return node, bounded_boxes, ordered_prims, total_nodes
+    # elif n_primitives == 0:
+    #     # TODO: Check: start == end
+    #     first_prim_offset = len(ordered_prims)
+    #     prim_num = bounded_boxes[start].prim_num
+    #     ordered_prims.append(primitives[prim_num])
+    #     node.init_leaf(first_prim_offset, n_primitives, bounds)
+    #     return node, bounded_boxes, ordered_prims, total_nodes
     else:
         centroid_bounds = None
         for i in range(start, end):
@@ -198,12 +205,13 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes)
         else:
             if split_method == 0:
                 # Partition primitives based on Surface Area Heuristic
-                if n_primitives <= 4:
+                if n_primitives <= 2:
                     # Partition primitives into equally sized subsets
                     mid = (start + end) // 2
-                    # nth_element(bounded_boxes, mid, first=start, last=end, key=lambda x: x.bounds.centroid[dim])
-                    bounded_boxes[start:end] = sorted(bounded_boxes[start:end], key=lambda x: x.bounds.centroid[dim],
-                                                      reverse=False)
+                    nth_element(bounded_boxes, mid, first=start, last=end,
+                                key=lambda x: x.bounds.centroid[dim])
+                    # bounded_boxes[start:end] = sorted(bounded_boxes[start:end], key=lambda x: x.bounds.centroid[dim],
+                    #                                   reverse=False)
                 else:
                     n_buckets = 12
                     buckets = [BucketInfo() for _ in range(n_buckets)]
@@ -230,7 +238,7 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes)
                             count_1 += buckets[j].count
 
                         _cost = .125 * (
-                                    count_0 * get_surface_area(b0) + count_1 * get_surface_area(b1)) / get_surface_area(
+                                count_0 * get_surface_area(b0) + count_1 * get_surface_area(b1)) / get_surface_area(
                             bounds)
                         costs.append(_cost)
 
@@ -245,14 +253,13 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes)
                     # Either create leaf or split primitives at selected SAH bucket
                     leaf_cost = n_primitives
                     if n_primitives > max_prims_in_node or min_cost < leaf_cost:
-                        # pmid = partition(bounded_boxes,
-                        #                  lambda x: partition_pred(x, n_buckets, centroid_bounds, dim, min_cost_split_bucket),
-                        #                  first=start,
-                        #                  last=end)
+                        # pmid = partition(bounded_boxes, lambda x: partition_pred(x, n_buckets, centroid_bounds,
+                        # dim, min_cost_split_bucket), first=start, last=end)
                         pmid = partition(bounded_boxes[start:end],
                                          lambda x: partition_pred(x, n_buckets, centroid_bounds, dim,
                                                                   min_cost_split_bucket))
-                        mid = pmid + start  # bounded_boxes[0]
+
+                        mid = pmid + start
                     else:
                         # Create leaf BVH Node
                         first_prim_offset = len(ordered_prims)
@@ -269,16 +276,26 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes)
                                     lambda x: x.bounds.centroid[dim] < pmid)
                 mid = mid_ptr + start
 
-                # if mid!=start and mid!=end:
-                #     break
+                if mid == start or mid == end:
+                    # fallback to next split_method
+                    mid = (start + end) // 2
+                    nth_element(bounded_boxes, mid, first=start, last=end,
+                                key=lambda x: x.bounds.centroid[dim])
+            else:
+                # partition primitives into equally-sized subsets
+                mid = (start + end) // 2
+                nth_element(bounded_boxes, mid, first=start, last=end,
+                            key=lambda x: x.bounds.centroid[dim])
+                # bounded_boxes[start:end] = sorted(bounded_boxes[start:end], key=lambda x: x.bounds.centroid[dim],
+                #                                   reverse=False)
 
         # print(start, mid, end)
 
         child_0, bounded_boxes, ordered_prims, total_nodes = build_bvh(primitives, bounded_boxes, start, mid,
-                                                                       ordered_prims, total_nodes)
+                                                                       ordered_prims, total_nodes, split_method)
 
         child_1, bounded_boxes, ordered_prims, total_nodes = build_bvh(primitives, bounded_boxes, mid, end,
-                                                                       ordered_prims, total_nodes)
+                                                                       ordered_prims, total_nodes, split_method)
 
         node.init_interior(dim, child_0, child_1)
 
@@ -307,113 +324,6 @@ def flatten_bvh(linear_nodes, node, offset):
     return linear_nodes, offset
 
 
-# @numba.njit
-# def intersect_bvh(ray_origin, ray_direction, linear_bvh, primitives):
-#     triangle = None
-#     current_t = np.inf
-#     current_idx = 0
-#     inv_dir = 1/ray_direction
-#     dir_is_neg = [inv_dir[0] < 0, inv_dir[1] < 0, inv_dir[2] < 0]
-#     visited_nodes = [False for _ in range(len(linear_bvh))]
-#     while True:
-#         if not visited_nodes[current_idx]:
-#             visited_nodes[current_idx] = True
-#             node = linear_bvh[int(current_idx)]
-#             # print("checking node: "+ str(current_idx))
-#             if intersect_bounds(node.bounds, ray_origin, ray_direction, inv_dir, dir_is_neg):
-#                 # check if it's a leaf node
-#                 if node.n_primitives>0:
-#                     # print("intersected node: "+ str(current_idx))
-#                     for i in range(node.primitives_offset, node.primitives_offset+node.n_primitives):
-#                         t = triangle_intersect(ray, primitives[i])
-#                         if t is None:
-#                             continue
-#                         if EPSILON < t < current_t:
-#                             current_t = t
-#                             triangle = primitives[i]
-#                 else:
-#                     if dir_is_neg[node.axis]:
-#                         current_idx = node.second_child_offset
-#                     else:
-#                         for i in range(len(visited_nodes)):
-#                             if not visited_nodes[i]:
-#                                 current_idx = i
-#                                 break
-#             else:
-#                 for i in range(len(visited_nodes)):
-#                     if not visited_nodes[i]:
-#                         current_idx = i
-#                         break
-#         else:
-#             for i in range(len(visited_nodes)):
-#                 if not visited_nodes[i]:
-#                     current_idx = i
-#                     break
-#         all_visited = True
-#         for i in range(len(visited_nodes)):
-#             if not visited_nodes[i]:
-#                 all_visited=False
-#                 break
-#         if all_visited:
-#             break
-#
-#     return triangle, current_t
-
-
-@numba.njit
-def __intersect_bvh(ray, primitives, linear_bvh):
-    triangles = []
-
-    inv_dir = 1 / ray.direction
-
-    # _id = np.random.randint(1000)
-
-    dir_is_neg = [inv_dir[0] < 0, inv_dir[1] < 0, inv_dir[2] < 0]
-    to_visit_offset = 0
-    current_node_index = 0
-    nodes_to_visit = [0 for _ in range(64)]  #
-    # visited_nodes = [False for _ in range(len(linear_bvh))]
-
-    while True:
-        node = linear_bvh[int(current_node_index)]
-        # print(str(_id)+"Current Node: "+str(current_node_index)+"\n")
-        # print(str(_id)+"To Visit Offset: "+str(to_visit_offset)+"\n")
-        if intersect_bounds(node.bounds, ray, inv_dir):
-            # if aabb_intersect(ray_origin, ray_direction, node.bounds):
-            if node.n_primitives > 0:
-                # print(str(_id)+"Primitives found at: "+str(current_node_index)+"\n")
-                for i in range(node.n_primitives):
-                    t = triangle_intersect(ray, primitives[node.primitives_offset + i])
-                    if t is not None:
-                        triangles.append(primitives[node.primitives_offset + i])
-                if to_visit_offset == 0:
-                    # print(str(_id)+"Break due to visit offset zero \n")
-                    break
-                to_visit_offset -= 1
-                current_node_index = nodes_to_visit[to_visit_offset]
-                # print(str(_id)+"From if, next: "+str(current_node_index)+"\n")
-            else:
-                if dir_is_neg[node.axis]:
-                    nodes_to_visit[to_visit_offset] = current_node_index + 1
-                    to_visit_offset += 1
-                    current_node_index = node.second_child_offset
-                    # print(str(_id)+"Direction is negative, next: "+str(current_node_index)+"\n")
-                else:
-                    nodes_to_visit[to_visit_offset] = node.second_child_offset
-                    to_visit_offset += 1
-                    current_node_index += 1
-                    # print(str(_id)+"Direction is positive, next: "+str(current_node_index)+"\n")
-        else:
-            if to_visit_offset == 0:
-                break
-
-            to_visit_offset -= 1
-            current_node_index = nodes_to_visit[to_visit_offset]
-            # print(str(_id)+"From else, next: "+str(current_node_index)+"\n")
-
-    return triangles
-
-
 @numba.njit
 def intersect_bvh(ray, primitives, linear_bvh):
     current_idx = 0
@@ -421,7 +331,7 @@ def intersect_bvh(ray, primitives, linear_bvh):
     visited = [False for _ in range(len(linear_bvh))]
     inv_dir = 1 / ray.direction
     dir_is_neg = [inv_dir[0] < 0, inv_dir[1] < 0, inv_dir[2] < 0]
-    min_distance = ray.tmax
+    min_distance = np.inf
 
     while True:
         if not visited[current_idx]:
@@ -433,9 +343,8 @@ def intersect_bvh(ray, primitives, linear_bvh):
                     for i in range(node.n_primitives):
                         leaf_idx = node.primitives_offset + i
                         visited[leaf_idx] = True
-                        t = triangle_intersect(ray, primitives[leaf_idx])
-                        if t is not None and EPSILON < t < min_distance:
-                            min_distance = t
+                        if primitives[leaf_idx].intersect(ray):
+                            # min_distance = t
                             # triangles.append(primitives[leaf_idx])
                             triangle = primitives[leaf_idx]
                     if current_idx == 0:
@@ -478,4 +387,52 @@ def intersect_bvh(ray, primitives, linear_bvh):
                 break
 
     # print("No of triangles:-"+str(len(triangles)))
-    return triangle, min_distance
+    return triangle  # , min_distance
+
+
+import numba
+import numpy as np
+
+
+@numba.njit
+def alt_intersect_bvh(ray, primitives, linear_bvh):
+    triangle = None
+    min_distance = np.inf
+    inv_dir = 1 / ray.direction
+    dir_is_neg = [inv_dir[0] < 0, inv_dir[1] < 0, inv_dir[2] < 0]
+
+    stack_size = 64  # Adjust the size as needed
+    stack = np.empty(stack_size, dtype=np.uint32)
+    stack_ptr = 0
+    stack[stack_ptr] = 0  # Start from root
+
+    while stack_ptr >= 0:
+        current_node_index = stack[stack_ptr]
+        stack_ptr -= 1
+
+        node = linear_bvh[current_node_index]
+
+        if intersect_bounds(node.bounds, ray, inv_dir):
+            if node.n_primitives > 0:
+                for i in range(node.n_primitives):
+                    leaf_idx = node.primitives_offset + i
+                    hit, t = triangle_intersect(ray, primitives[leaf_idx])
+                    if hit and t < min_distance:
+                        min_distance = t
+                        triangle = primitives[leaf_idx]
+            else:
+                first_child_index = current_node_index + 1
+                second_child_index = node.second_child_offset
+
+                if dir_is_neg[node.axis]:
+                    stack_ptr += 1
+                    stack[stack_ptr] = first_child_index
+                    stack_ptr += 1
+                    stack[stack_ptr] = second_child_index
+                else:
+                    stack_ptr += 1
+                    stack[stack_ptr] = second_child_index
+                    stack_ptr += 1
+                    stack[stack_ptr] = first_child_index
+
+    return triangle

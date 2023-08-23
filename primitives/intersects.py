@@ -23,46 +23,38 @@ class Intersection:
 
 
 @numba.njit
-def triangle_intersect(ray, triangle, EPSILON=1e-6):
-    vertex_a = triangle.vertex_1
-    vertex_b = triangle.vertex_2
-    vertex_c = triangle.vertex_3
+def triangle_intersect(ray, triangle):
+    # Compute the triangle's normal and verify the ray doesn't parallel the plane
+    edge1 = triangle.vertex_2 - triangle.vertex_1
+    edge2 = triangle.vertex_3 - triangle.vertex_1
+    h = np.cross(ray.direction, edge2)
+    a = np.dot(edge1, h)
 
-    plane_normal = triangle.normal
+    if np.abs(a) < 0.00001:
+        return False, None
 
-    ab = vertex_b - vertex_a
-    ac = vertex_c - vertex_a
+    # Compute values for intersection
+    f = 1.0 / a
+    s = ray.origin - triangle.vertex_1
+    u = f * (np.dot(s, h))
 
-    pvec = np.cross(ray.direction, ac)
-    det = np.dot(ab, pvec)
+    if u < 0.0 or u > 1.0:
+        return False, None
 
-    if abs(det) <= EPSILON:
-        return False
+    q = np.cross(s, edge1)
+    v = f * np.dot(ray.direction, q)
 
-    inv_det = 1.0 / det
+    if v < 0.0 or u + v > 1.0:
+        return False, None
 
-    tvec = ray.origin - vertex_a
+    # Compute the distance along the ray to the triangle
+    t = f * np.dot(edge2, q)
 
-    u = np.dot(tvec, pvec) * inv_det
+    if t > 0.00001:
+        return True, t
+    else:
+        return False, None
 
-    if u < 0 or u > 1:
-        return False
-
-    qvec = np.cross(tvec, ab)
-
-    v = np.dot(ray.direction, qvec) * inv_det
-
-    if v < 0 or u + v > 1:
-        return False
-
-    t = np.dot(ac, qvec) * inv_det
-
-    if t < ray.tmin or t > ray.tmax:
-        return False
-
-    ray.tmax = t
-
-    return True
 
 @numba.njit
 def __triangle_intersect(ray_origin, ray_end, triangle):
@@ -111,24 +103,59 @@ def aabb_intersect(ray_origin, ray_direction, box):
     return t_min<=t_max
 
 
+# @numba.njit
+# def intersect_bounds(bounds, ray, inv_dir, hit0=None, hit1=None):
+#     t0 = ray.tmin
+#     t1 = ray.tmax
+#     for i in range(3):
+#         t_near = (bounds.min_point[i]-ray.origin[i])*inv_dir[i]
+#         t_far = (bounds.max_point[i]-ray.origin[i])*inv_dir[i]
+#         if t_near>t_far:
+#             t_near, t_far = t_far, t_near
+#         t_far *= 1+2*gamma(3)
+#         t0 = t_near if t_near>t0 else t0
+#         t1 = t_far if t_far<t1 else t1
+#         if t0>t1:
+#             return False
+#     if hit0 is not None:
+#         hit0=t0
+#     if hit1 is not None:
+#         hit1=t1
+#     return True
+
+
 @numba.njit
-def intersect_bounds(bounds, ray, inv_dir, hit0=None, hit1=None):
-    t0 = 0
-    t1 = ray.tmax
-    for i in range(3):
-        t_near = (bounds.min_point[i]-ray.origin[i])*inv_dir[i]
-        t_far = (bounds.max_point[i]-ray.origin[i])*inv_dir[i]
-        if t_near>t_far:
-            t_near, t_far = t_far, t_near
-        t_far *= 1+2*gamma(3)
-        t0 = t_near if t_near>t0 else t0
-        t1 = t_far if t_far<t1 else t1
-        if t0>t1:
-            return False
-    if hit0 is not None:
-        hit0=t0
-    if hit1 is not None:
-        hit1=t1
+def intersect_bounds(aabb, ray, inv_dir):
+    tmin = (aabb.min_point[0] - ray.origin[0]) * inv_dir[0]
+    tmax = (aabb.max_point[0] - ray.origin[0]) * inv_dir[0]
+
+    if inv_dir[0] < 0:
+        tmin, tmax = tmax, tmin
+
+    tymin = (aabb.min_point[1] - ray.origin[1]) * inv_dir[1]
+    tymax = (aabb.max_point[1] - ray.origin[1]) * inv_dir[1]
+
+    if inv_dir[1] < 0:
+        tymin, tymax = tymax, tymin
+
+    if (tmin > tymax) or (tymin > tmax):
+        return False
+
+    if tymin > tmin:
+        tmin = tymin
+
+    if tymax < tmax:
+        tmax = tymax
+
+    tzmin = (aabb.min_point[2] - ray.origin[2]) * inv_dir[2]
+    tzmax = (aabb.max_point[2] - ray.origin[2]) * inv_dir[2]
+
+    if inv_dir[2] < 0:
+        tzmin, tzmax = tzmax, tzmin
+
+    if (tmin > tzmax) or (tzmin > tmax):
+        return False
+
     return True
 
 
