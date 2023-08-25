@@ -22,7 +22,7 @@ def render_scene(scene, primitives, bvh, progress_proxy):
             ray_direction = scene.look_at + np.array([offset_x, offset_y, 0], dtype=np.float64)
             ray_origin = scene.camera
 
-            ray = Ray(ray_origin, ray_direction, 0)
+            ray = Ray(ray_origin, ray_direction)
 
             nearest_object, min_distance, intersection, surface_normal = hit_object(primitives, bvh, ray)
 
@@ -38,6 +38,7 @@ def render_scene(scene, primitives, bvh, progress_proxy):
 
 @numba.njit(nogil=True, parallel=True)
 def _render_scene(scene, primitives, bvh):
+    # without progress bar
     for y in numba.prange(scene.height):
         color = ZEROS
         for x in numba.prange(scene.width):
@@ -48,7 +49,7 @@ def _render_scene(scene, primitives, bvh):
             ray_direction = scene.look_at + np.array([offset_x, offset_y, 0], dtype=np.float64)
             ray_origin = scene.camera
 
-            ray = Ray(ray_origin, ray_direction, 0)
+            ray = Ray(ray_origin, ray_direction)
 
             nearest_object, min_distance, intersection, surface_normal = hit_object(primitives, bvh, ray)
 

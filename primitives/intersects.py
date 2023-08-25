@@ -103,27 +103,6 @@ def aabb_intersect(ray_origin, ray_direction, box):
     return t_min<=t_max
 
 
-# @numba.njit
-# def intersect_bounds(bounds, ray, inv_dir, hit0=None, hit1=None):
-#     t0 = ray.tmin
-#     t1 = ray.tmax
-#     for i in range(3):
-#         t_near = (bounds.min_point[i]-ray.origin[i])*inv_dir[i]
-#         t_far = (bounds.max_point[i]-ray.origin[i])*inv_dir[i]
-#         if t_near>t_far:
-#             t_near, t_far = t_far, t_near
-#         t_far *= 1+2*gamma(3)
-#         t0 = t_near if t_near>t0 else t0
-#         t1 = t_far if t_far<t1 else t1
-#         if t0>t1:
-#             return False
-#     if hit0 is not None:
-#         hit0=t0
-#     if hit1 is not None:
-#         hit1=t1
-#     return True
-
-
 @numba.njit
 def intersect_bounds(aabb, ray, inv_dir):
     tmin = (aabb.min_point[0] - ray.origin[0]) * inv_dir[0]
