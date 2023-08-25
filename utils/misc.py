@@ -2,7 +2,7 @@ import numba
 import numpy as np
 import pyvista as pv
 
-from accelerators.bvh import intersect_bvh, alt_intersect_bvh
+from accelerators.bvh import intersect_bvh
 from primitives.intersects import Intersection
 from primitives.triangle import Triangle
 
@@ -19,6 +19,7 @@ def intersect_primitives(ray, triangles):
 @numba.njit
 def hit_object(primitives, bvh, ray):
     nearest_object = intersect_bvh(ray, primitives, bvh)
+    # nearest_object = intersect_bvh(ray, primitives, bvh)
 
     if nearest_object is None:
         # no object was hit
