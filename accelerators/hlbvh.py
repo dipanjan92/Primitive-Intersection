@@ -9,21 +9,21 @@ from primitives.aabb import AABB
 from utils.stdlib import partition, find_interval
 
 
-@numba.experimental.jitclass([
-    ('prim_ix', numba.intp),
-    ('morton_code', numba.int32)
-])
+#@numba.experimental.jitclass([
+#     ('prim_ix', numba.intp),
+#     ('morton_code', numba.int32)
+# ])
 class MortonPrimitive():
     def __init__(self):
         self.prim_ix = 0
         self.morton_code = 0
 
 
-@numba.experimental.jitclass([
-    ('start_ix', numba.intp),
-    ('n_primitives', numba.intp),
-    ('build_nodes', numba.types.ListType(BVHNode.class_type.instance_type))
-])
+#@numba.experimental.jitclass([
+#     ('start_ix', numba.intp),
+#     ('n_primitives', numba.intp),
+#     ('build_nodes', numba.types.ListType(BVHNode.class_type.instance_type))
+# ])
 class LBVHTreelet():
     def __init__(self, start_ix, n_primitives, build_nodes):
         self.start_ix = start_ix
@@ -31,12 +31,12 @@ class LBVHTreelet():
         self.build_nodes = build_nodes
 
 
-@numba.experimental.jitclass([
+#@numba.experimental.jitclass([
     ('n_buckets', numba.int32),
-    ('centroid_bounds', AABB.class_type.instance_type),
-    ('dim', numba.int32),
-    ('min_cost_split_bucket', numba.int32)
-])
+#     ('centroid_bounds', AABB.class_type.instance_type),
+#     ('dim', numba.int32),
+#     ('min_cost_split_bucket', numba.int32)
+# ])
 class PartitionWrapper:
     def __init__(self, n_buckets, centroid_bounds, dim, min_cost_split_bucket):
         self.n_buckets = n_buckets
@@ -56,10 +56,10 @@ class PartitionWrapper:
         return b <= self.min_cost_split_bucket
 
 
-@numba.experimental.jitclass([
-    ('morton_prims', numba.types.ListType(MortonPrimitive.class_type.instance_type)),
-    ('mask', numba.int32)
-])
+#@numba.experimental.jitclass([
+#     ('morton_prims', numba.types.ListType(MortonPrimitive.class_type.instance_type)),
+#     ('mask', numba.int32)
+# ])
 class IntervalWrapper:
     def __init__(self, morton_prims, mask):
         self.morton_prims = morton_prims
@@ -85,7 +85,7 @@ class IntervalWrapper:
 #
 #     return x
 
-@numba.njit
+#@numba.njit
 def left_shift_3(x):
     x = int(x)
 
@@ -105,7 +105,7 @@ def left_shift_3(x):
     return x
 
 
-@numba.njit
+#@numba.njit
 def encode_morton_3(v):
     assert v[0] >= 0, "x must be non-negative"
     assert v[1] >= 0, "y must be non-negative"
@@ -113,7 +113,7 @@ def encode_morton_3(v):
     return (left_shift_3(v[2]) << 2) | (left_shift_3(v[1]) << 1) | left_shift_3(v[0])
 
 
-@numba.njit
+#@numba.njit
 def radix_sort(v):
     temp_vector = [MortonPrimitive() for _ in range(len(v))]
     bits_per_pass = 6
@@ -154,7 +154,7 @@ def radix_sort(v):
         v, temp_vector = temp_vector, v
 
 
-@numba.njit
+#@numba.njit
 def build_upper_sah(treelet_roots, start, end, total_nodes):
     assert start < end, "start should be less than end"
     n_nodes = end - start
@@ -226,7 +226,7 @@ def build_upper_sah(treelet_roots, start, end, total_nodes):
     return node
 
 
-@numba.njit
+#@numba.njit
 def emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives, total_nodes,
               ordered_prims, ordered_prims_offset, bit_index):
     assert n_primitives > 0
@@ -293,13 +293,13 @@ def emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives
         return node
 
 
-@numba.njit
+#@numba.njit
 def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
     bounds = None
     for pi in bounded_boxes:
         bounds = enclose_centroids(bounds, pi.bounds.centroid)
 
-    morton_prims = numba.typed.List() # [MortonPrimitive() for _ in range(len(bounded_boxes))]
+    morton_prims = [] #numba.typed.List() # [MortonPrimitive() for _ in range(len(bounded_boxes))]
     for _ in range(len(bounded_boxes)):
         morton_prims.append(MortonPrimitive())
     morton_bits = 10
@@ -325,7 +325,7 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
             n_primitives = end - start
             max_bvh_nodes = int(2 * n_primitives - 1)
             # nodes = [BVHNode() for _ in range(max_bvh_nodes)]
-            nodes = numba.typed.List()
+            nodes = [] #numba.typed.List()
             for _ in range(max_bvh_nodes):
                 nodes.append(BVHNode())
             treelets_to_build.append(LBVHTreelet(start, n_primitives, nodes))
