@@ -29,7 +29,7 @@ import numba
 #     return i
 
 
-# @numba.njit
+@numba.njit
 def partition(arr, pred, first=0, last=None):
     # if last is None, consider the whole array
     if last is None:

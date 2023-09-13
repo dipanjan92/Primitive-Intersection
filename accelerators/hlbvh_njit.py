@@ -9,21 +9,21 @@ from primitives.aabb import AABB
 from utils.stdlib import partition, find_interval
 
 
-#@numba.experimental.jitclass([
-#     ('prim_ix', numba.intp),
-#     ('morton_code', numba.int32)
-# ])
+@numba.experimental.jitclass([
+    ('prim_ix', numba.intp),
+    ('morton_code', numba.int32)
+])
 class MortonPrimitive():
     def __init__(self):
         self.prim_ix = 0
         self.morton_code = 0
 
 
-#@numba.experimental.jitclass([
-#     ('start_ix', numba.intp),
-#     ('n_primitives', numba.intp),
-#     ('build_nodes', numba.types.ListType(BVHNode.class_type.instance_type))
-# ])
+@numba.experimental.jitclass([
+    ('start_ix', numba.intp),
+    ('n_primitives', numba.intp),
+    ('build_nodes', numba.types.ListType(BVHNode.class_type.instance_type))
+])
 class LBVHTreelet():
     def __init__(self, start_ix, n_primitives, build_nodes):
         self.start_ix = start_ix
@@ -31,12 +31,12 @@ class LBVHTreelet():
         self.build_nodes = build_nodes
 
 
-#@numba.experimental.jitclass([
+@numba.experimental.jitclass([
     ('n_buckets', numba.int32),
-#     ('centroid_bounds', AABB.class_type.instance_type),
-#     ('dim', numba.int32),
-#     ('min_cost_split_bucket', numba.int32)
-# ])
+    ('centroid_bounds', AABB.class_type.instance_type),
+    ('dim', numba.int32),
+    ('min_cost_split_bucket', numba.int32)
+])
 class PartitionWrapper:
     def __init__(self, n_buckets, centroid_bounds, dim, min_cost_split_bucket):
         self.n_buckets = n_buckets
@@ -56,10 +56,10 @@ class PartitionWrapper:
         return b <= self.min_cost_split_bucket
 
 
-#@numba.experimental.jitclass([
-#     ('morton_prims', numba.types.ListType(MortonPrimitive.class_type.instance_type)),
-#     ('mask', numba.int32)
-# ])
+@numba.experimental.jitclass([
+    ('morton_prims', numba.types.ListType(MortonPrimitive.class_type.instance_type)),
+    ('mask', numba.int32)
+])
 class IntervalWrapper:
     def __init__(self, morton_prims, mask):
         self.morton_prims = morton_prims
@@ -85,7 +85,7 @@ class IntervalWrapper:
 #
 #     return x
 
-#@numba.njit
+@numba.njit
 def left_shift_3(x):
     x = int(x)
 
@@ -105,7 +105,7 @@ def left_shift_3(x):
     return x
 
 
-#@numba.njit
+@numba.njit
 def encode_morton_3(v):
     assert v[0] >= 0, "x must be non-negative"
     assert v[1] >= 0, "y must be non-negative"
@@ -113,7 +113,7 @@ def encode_morton_3(v):
     return (left_shift_3(v[2]) << 2) | (left_shift_3(v[1]) << 1) | left_shift_3(v[0])
 
 
-#@numba.njit
+@numba.njit
 def radix_sort(v):
     temp_vector = [MortonPrimitive() for _ in range(len(v))]
     bits_per_pass = 6
@@ -154,7 +154,7 @@ def radix_sort(v):
         v, temp_vector = temp_vector, v
 
 
-#@numba.njit
+@numba.njit
 def build_upper_sah(treelet_roots, start, end, total_nodes):
     assert start < end, "start should be less than end"
     n_nodes = end - start
@@ -189,7 +189,7 @@ def build_upper_sah(treelet_roots, start, end, total_nodes):
         buckets[b].count += 1
         buckets[b].bounds = enclose_volumes(buckets[b].bounds, treelet_roots[i].bounds)
 
-    costs = []
+    costs = [] #numba.typed.List()
     for i in range(n_buckets - 1):
         b0, b1 = None, None
         count0, count1 = 0, 0
@@ -212,8 +212,13 @@ def build_upper_sah(treelet_roots, start, end, total_nodes):
 
     # Split nodes and create interior HLBVH SAH node
     pred_wrapper = PartitionWrapper(n_buckets, centroid_bounds, dim, min_cost_split_bucket)
+
+    # print("before partition:- start: ", start, " and end: ", end)
+
     mid = partition(treelet_roots[start:end], pred_wrapper.partition_pred)
     mid += start
+
+    # print("after partition mid: ", mid)
 
     assert mid > start, "Error: mid is not greater than start"
     assert mid < end, "Error: mid is not less than end"
@@ -226,7 +231,7 @@ def build_upper_sah(treelet_roots, start, end, total_nodes):
     return node
 
 
-#@numba.njit
+@numba.njit
 def emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives, total_nodes,
               ordered_prims, ordered_prims_offset, bit_index):
     assert n_primitives > 0
@@ -293,18 +298,21 @@ def emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives
         return node
 
 
-#@numba.njit
+@numba.njit(parallel=True)
 def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
     bounds = None
     for pi in bounded_boxes:
         bounds = enclose_centroids(bounds, pi.bounds.centroid)
 
-    morton_prims = [] #numba.typed.List() # [MortonPrimitive() for _ in range(len(bounded_boxes))]
+    morton_prims = numba.typed.List()
+
     for _ in range(len(bounded_boxes)):
         morton_prims.append(MortonPrimitive())
+
     morton_bits = 10
     morton_scale = 1 << morton_bits
-    for i in range(len(bounded_boxes)):
+
+    for i in numba.prange(len(bounded_boxes)):
         morton_prims[i].prim_ix = bounded_boxes[i].prim_num
         centroid_offset = offset_bounds(bounds, bounded_boxes[i].bounds.centroid)  # check if vector or scalar
 
@@ -314,7 +322,7 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
 
     radix_sort(morton_prims)
 
-    treelets_to_build = []
+    treelets_to_build = numba.typed.List()
 
     start = 0
     end = 1
@@ -325,7 +333,7 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
             n_primitives = end - start
             max_bvh_nodes = int(2 * n_primitives - 1)
             # nodes = [BVHNode() for _ in range(max_bvh_nodes)]
-            nodes = [] #numba.typed.List()
+            nodes = numba.typed.List()
             for _ in range(max_bvh_nodes):
                 nodes.append(BVHNode())
             treelets_to_build.append(LBVHTreelet(start, n_primitives, nodes))
@@ -335,16 +343,12 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
     atomic_total = 0
     ordered_prims_offset = [0]
 
-    finished_treelets = []
+    finished_treelets = numba.typed.List()
 
-    for i in range(len(treelets_to_build)):
+    for i in numba.prange(len(treelets_to_build)):
         nodes_created = [0]
         first_bit_index = 29 - 12
         tr = treelets_to_build[i]
-
-        # tr.build_nodes = emit_lbvh(tr.build_nodes, primitives, bounded_boxes,
-        #                            morton_prims[tr.start_ix:], tr.n_primitives,
-        #                            nodes_created, ordered_prims, ordered_prims_offset, first_bit_index)
 
         tr_build_nodes = emit_lbvh(tr.build_nodes, primitives, bounded_boxes, morton_prims[tr.start_ix:],
                                    tr.n_primitives,
@@ -356,7 +360,5 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
 
     total_nodes[0] = atomic_total
 
-    # finished_treelets = [treelet.build_nodes for treelet in treelets_to_build]
-
     return build_upper_sah(finished_treelets, 0, len(finished_treelets),
-                           total_nodes)  # primitives, bounded_boxes, start, end, ordered_prims, total_nodes
+                           total_nodes)
