@@ -129,6 +129,26 @@ def enclose_centroids(box, cent):
 
 
 @numba.njit
+def compute_bounding_box(node_list):
+    if len(node_list) == 0:
+        # Handle the case of an empty list
+        return None
+
+    # Initialize the min and max points to the first AABB's values
+    min_point = node_list[0].bounds.min_point
+    max_point = node_list[0].bounds.max_point
+
+    # Iterate through the list to find the overall min and max points
+    for node in node_list[1:]:
+        min_point = np.minimum(min_point, node.bounds.min_point)
+        max_point = np.maximum(max_point, node.bounds.max_point)
+
+    # Create a new AABB object for the enclosing bounding box
+    enclosing_box = AABB(min_point, max_point)
+    return enclosing_box
+
+
+@numba.njit
 def get_largest_dim(box):
     dx = abs(box.max_point[0] - box.min_point[0])
     dy = abs(box.max_point[1] - box.min_point[1])
@@ -228,9 +248,9 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes,
 
     n_boxes = len(bounded_boxes)
     max_prims_in_node = int(0.1 * n_boxes)
-    max_prims_in_node = max_prims_in_node if max_prims_in_node < 10 else 10
+    # max_prims_in_node = max_prims_in_node if max_prims_in_node < 4 else 4
     node = BVHNode()
-    total_nodes += 1
+    total_nodes[0] += 1
     bounds = None
     for i in range(start, end):
         bounds = enclose_volumes(bounds, bounded_boxes[i].bounds)
@@ -238,7 +258,7 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes,
     # print(start, end)
 
     if start == end:
-        return node, bounded_boxes, ordered_prims, total_nodes
+        return node
 
     n_primitives = end - start
     if n_primitives == 1:
@@ -248,7 +268,7 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes,
             prim_num = bounded_boxes[i].prim_num
             ordered_prims.append(primitives[prim_num])
         node.init_leaf(first_prim_offset, n_primitives, bounds)
-        return node, bounded_boxes, ordered_prims, total_nodes
+        return node
     else:
         centroid_bounds = None
         for i in range(start, end):
@@ -265,7 +285,7 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes,
                 ordered_prims.append(primitives[prim_num])
 
             node.init_leaf(first_prim_offset, n_primitives, bounds)
-            return node, bounded_boxes, ordered_prims, total_nodes
+            return node
 
         else:
             if split_method == 0:
@@ -333,7 +353,7 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes,
                             prim_num = bounded_boxes[i].prim_num
                             ordered_prims.append(primitives[prim_num])
                         node.init_leaf(first_prim_offset, n_primitives, bounds)
-                        return node, bounded_boxes, ordered_prims, total_nodes
+                        return node
 
             elif split_method == 1:
                 # partition primitives through node's midpoint
@@ -360,15 +380,15 @@ def build_bvh(primitives, bounded_boxes, start, end, ordered_prims, total_nodes,
 
         # print(start, mid, end)
 
-        child_0, bounded_boxes, ordered_prims, total_nodes = build_bvh(primitives, bounded_boxes, start, mid,
-                                                                       ordered_prims, total_nodes, split_method)
+        child_0 = build_bvh(primitives, bounded_boxes, start, mid,
+                            ordered_prims, total_nodes, split_method)
 
-        child_1, bounded_boxes, ordered_prims, total_nodes = build_bvh(primitives, bounded_boxes, mid, end,
-                                                                       ordered_prims, total_nodes, split_method)
+        child_1 = build_bvh(primitives, bounded_boxes, mid, end,
+                            ordered_prims, total_nodes, split_method)
 
         node.init_interior(dim, child_0, child_1)
 
-    return node, bounded_boxes, ordered_prims, total_nodes
+    return node
 
 
 def flatten_bvh(node_list, node, offset):

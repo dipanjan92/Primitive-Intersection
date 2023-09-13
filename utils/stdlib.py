@@ -4,6 +4,31 @@ Standard Library Functions
 import numba
 
 
+# def partition(arr, pred):
+#     # Use two pointers to create partitions
+#     i = 0  # The 'true' partition
+#     j = len(arr) - 1  # The 'false' partition
+#
+#     # Start partitioning
+#     while True:
+#         # Advance the 'true' pointer
+#         while (i < j) and pred(arr[i]):
+#             i += 1
+#         # Advance the 'false' pointer
+#         while (i < j) and not pred(arr[j]):
+#             j -= 1
+#
+#         # If pointers have crossed, partition is complete
+#         if i >= j:
+#             break
+#
+#         # Swap elements
+#         arr[i], arr[j] = arr[j], arr[i]
+#
+#     # Return the partition point
+#     return i
+
+
 @numba.njit
 def partition(arr, pred, first=0, last=None):
     # if last is None, consider the whole array
@@ -49,3 +74,22 @@ def nth_element(arr, n, first=0, last=None, key=lambda x: x):
             nth_element(arr, n, pi + 1, last, key)
         else:
             return arr[n]
+
+
+@numba.njit
+def find_interval(sz, pred):
+    size = sz - 2
+    first = 1
+
+    while size > 0:
+        # Evaluate predicate at midpoint and update first and size
+        half = size >> 1
+        middle = first + half
+        pred_result = pred(middle)
+
+        if pred_result:
+            first = middle + 1
+        else:
+            size = half
+
+    return max(min(first - 1, sz - 2), 0)
