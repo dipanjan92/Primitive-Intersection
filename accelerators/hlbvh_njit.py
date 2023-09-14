@@ -1,5 +1,3 @@
-import struct
-
 import numba
 import numpy as np
 
@@ -7,6 +5,8 @@ from accelerators.bvh import BVHNode, BucketInfo, enclose_volumes, get_largest_d
     offset_bounds, partition_pred, compute_bounding_box
 from primitives.aabb import AABB
 from utils.stdlib import partition, find_interval
+
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 @numba.experimental.jitclass([
@@ -189,7 +189,7 @@ def build_upper_sah(treelet_roots, start, end, total_nodes):
         buckets[b].count += 1
         buckets[b].bounds = enclose_volumes(buckets[b].bounds, treelet_roots[i].bounds)
 
-    costs = [] #numba.typed.List()
+    costs = []  # numba.typed.List()
     for i in range(n_buckets - 1):
         b0, b1 = None, None
         count0, count1 = 0, 0
@@ -260,19 +260,6 @@ def emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives
             return emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives,
                              total_nodes, ordered_prims, ordered_prims_offset, bit_index - 1)
 
-        # Find LBVH split point for this dimension
-        # search_start = 0
-        # search_end = n_primitives - 1
-        # while search_start + 1 != search_end:
-        #     assert search_start != search_end
-        #     mid = (search_start + search_end) // 2
-        #     if (morton_prims[search_start].morton_code & mask) == (morton_prims[mid].morton_code & mask):
-        #         search_start = mid
-        #     else:
-        #         assert morton_prims[mid].morton_code & mask == morton_prims[search_end].morton_code & mask
-        #         search_end = mid
-        # split_offset = search_end
-
         interval_wrapper = IntervalWrapper(morton_prims, mask)
         split_offset = find_interval(n_primitives, interval_wrapper.interval_pred)
 
@@ -298,14 +285,13 @@ def emit_lbvh(build_nodes, primitives, bounded_boxes, morton_prims, n_primitives
         return node
 
 
-@numba.njit(parallel=True)
+@numba.njit(parallel=True, nogil=True)
 def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
     bounds = None
     for pi in bounded_boxes:
         bounds = enclose_centroids(bounds, pi.bounds.centroid)
 
-    morton_prims = numba.typed.List()
-
+    morton_prims = numba.typed.List() # [MortonPrimitive() for _ in range(len(bounded_boxes))]
     for _ in range(len(bounded_boxes)):
         morton_prims.append(MortonPrimitive())
 
@@ -345,10 +331,18 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
 
     finished_treelets = numba.typed.List()
 
-    for i in numba.prange(len(treelets_to_build)):
+    nodes_array = np.zeros(len(treelets_to_build), dtype=np.int32)
+
+    # print(nodes_array, len(treelets_to_build), ordered_prims_offset)
+
+    for i in range(len(treelets_to_build)):
         nodes_created = [0]
         first_bit_index = 29 - 12
         tr = treelets_to_build[i]
+
+        # tr.build_nodes = emit_lbvh(tr.build_nodes, primitives, bounded_boxes,
+        #                            morton_prims[tr.start_ix:], tr.n_primitives,
+        #                            nodes_created, ordered_prims, ordered_prims_offset, first_bit_index)
 
         tr_build_nodes = emit_lbvh(tr.build_nodes, primitives, bounded_boxes, morton_prims[tr.start_ix:],
                                    tr.n_primitives,
@@ -356,9 +350,15 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
 
         finished_treelets.append(tr_build_nodes)
 
-        atomic_total += nodes_created[0]
+        # atomic_total += nodes_created[0]
+        nodes_array[i] = nodes_created[0]
 
-    total_nodes[0] = atomic_total
+        # print('nodes_created: ', nodes_created, ' ordered_prims_offset: ', ordered_prims_offset, ' n_primitives: ', tr.n_primitives)
+
+    # total_nodes[0] = atomic_total
+    total_nodes[0] = np.sum(nodes_array)
+
+    # finished_treelets = [treelet.build_nodes for treelet in treelets_to_build]
 
     return build_upper_sah(finished_treelets, 0, len(finished_treelets),
-                           total_nodes)
+                           total_nodes)  # primitives, bounded_boxes, start, end, ordered_prims, total_nodes

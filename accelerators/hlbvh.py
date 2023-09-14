@@ -6,7 +6,7 @@ import numpy as np
 from accelerators.bvh import BVHNode, BucketInfo, enclose_volumes, get_largest_dim, enclose_centroids, get_surface_area, \
     offset_bounds, partition_pred, compute_bounding_box
 from primitives.aabb import AABB
-from utils.stdlib import partition, find_interval
+from utils.stdlib import _partition, find_interval
 
 
 #@numba.experimental.jitclass([
@@ -212,7 +212,7 @@ def build_upper_sah(treelet_roots, start, end, total_nodes):
 
     # Split nodes and create interior HLBVH SAH node
     pred_wrapper = PartitionWrapper(n_buckets, centroid_bounds, dim, min_cost_split_bucket)
-    mid = partition(treelet_roots[start:end], pred_wrapper.partition_pred)
+    mid = _partition(treelet_roots[start:end], pred_wrapper.partition_pred)
     mid += start
 
     assert mid > start, "Error: mid is not greater than start"
@@ -337,6 +337,10 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
 
     finished_treelets = []
 
+    nodes_array = np.zeros(len(treelets_to_build), dtype=np.int32)
+
+    # print(nodes_array, len(treelets_to_build), ordered_prims_offset)
+
     for i in range(len(treelets_to_build)):
         nodes_created = [0]
         first_bit_index = 29 - 12
@@ -352,9 +356,13 @@ def build_hlbvh(primitives, bounded_boxes, ordered_prims, total_nodes):
 
         finished_treelets.append(tr_build_nodes)
 
-        atomic_total += nodes_created[0]
+        # atomic_total += nodes_created[0]
+        nodes_array[i] = nodes_created[0]
 
-    total_nodes[0] = atomic_total
+        # print('nodes_created: ', nodes_created, ' ordered_prims_offset: ', ordered_prims_offset, ' n_primitives: ', tr.n_primitives)
+
+    # total_nodes[0] = atomic_total
+    total_nodes[0] = np.sum(nodes_array)
 
     # finished_treelets = [treelet.build_nodes for treelet in treelets_to_build]
 
